@@ -539,6 +539,26 @@ function main() {
   const previousPosts = rawManifest.posts ?? rawManifest;
   const previousImages = Array.isArray(rawManifest.images) ? rawManifest.images : [];
 
+  // 安全闸门：一次同步要删掉大半文章，通常不是作者真的删了稿子，而是源目录设错了
+  // （BLOG_VAULT_DIR 指到了别处、vault 改了名）。这种情况必须先确认再动手删。
+  const incoming = new Set(notes.map((n) => n.slug));
+  const staleSlugs = Object.keys(previousPosts).filter((slug) => !incoming.has(slug));
+  const previousCount = Object.keys(previousPosts).length;
+  if (
+    !process.argv.includes("--force") &&
+    previousCount >= 3 &&
+    staleSlugs.length / previousCount > 0.5
+  ) {
+    console.error(
+      `\n本次同步会删除 ${staleSlugs.length}/${previousCount} 篇文章：${staleSlugs.join("、")}`,
+    );
+    console.error("这个比例不正常，多半是源目录指错了。请检查：");
+    console.error(`  · blog.config.json 里的 vault 与 folder（当前：${label}）`);
+    console.error("  · BLOG_VAULT_DIR 环境变量是否指向了别处");
+    console.error("确实要删就加上 --force 重新运行。\n");
+    process.exit(1);
+  }
+
   const current = {};
   const usedImages = new Set();
   let created = 0;
@@ -567,8 +587,7 @@ function main() {
 
   // vault 里删掉的同步删掉；只动清单里记录过的文件，手写的文章不受影响
   let removed = 0;
-  for (const slug of Object.keys(previousPosts)) {
-    if (current[slug]) continue;
+  for (const slug of staleSlugs) {
     const stale = path.join(POSTS_DIR, `${slug}.mdx`);
     if (fs.existsSync(stale)) {
       fs.unlinkSync(stale);
