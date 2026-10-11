@@ -30,6 +30,9 @@ npm run build && npm start
 
 ## 二、写文章
 
+> 如果你习惯用 Obsidian，直接看下一节——那条路不用碰这个仓库。
+> 本节是在仓库里直接写文件的方式，两种可以混用。
+
 ### 新建一篇
 
 ```bash
@@ -108,7 +111,81 @@ title: 我为什么删掉了 *60%* 的代码
 
 ---
 
-## 三、部署
+## 三、在 Obsidian 里写（推荐）
+
+日常写作走这条路：**在 Obsidian 里写笔记，一条命令发布**，不用碰这个仓库。
+
+### 写作位置
+
+笔记放在 vault 的 `博客/` 文件夹：
+
+```
+~/pkm/瑞克和莫蒂/博客/     ← 只放要发布的文章
+```
+
+源目录写在 `blog.config.json` 里（vault 名 + 文件夹名），脚本运行时去读 Obsidian 自己的
+vault 清单拿绝对路径，所以换电脑或挪动 vault 都不需要改代码。
+也可以用环境变量临时指定：`BLOG_VAULT_DIR=/绝对路径 npm run sync`。
+
+**下划线开头的文件会被跳过**——说明、模板、草稿箱都放这类文件，不会误发出去。
+文件夹里已经放好了 `_写作说明.md` 和 `_模板.md`。
+
+### 发布
+
+```bash
+npm run publish
+```
+
+依次做四件事：**同步 → 构建校验 → 提交 → 推送**。推送后 Vercel 自动重新构建，约一分钟上线。
+**构建失败会中止**，不会把坏内容推上去。
+
+只想先看看效果、不发布：
+
+```bash
+npm run sync      # 只同步到仓库
+npm run dev       # 本地预览
+```
+
+### frontmatter
+
+```yaml
+---
+title: 文章标题            # 不写就用文件名（去掉日期前缀）
+date: 2026-10-11           # 不写就取文件名日期前缀，再没有就用文件修改时间
+summary: 一句话说清这篇解决什么问题   # 不写就自动截取正文开头
+tags: [工程, 调试]
+draft: true                # 草稿：本地可见，正式构建不收录
+slug: my-post              # 指定网址：改了文件名也不会破坏已发布的链接
+featured: true             # 置顶到首页大图位，同时只留一篇
+---
+```
+
+### Obsidian 语法支持
+
+| 写法 | 发布后 |
+| --- | --- |
+| `[[另一篇笔记]]` | 变成指向那篇文章的站内链接（按文件名或标题匹配） |
+| `[[另一篇笔记\|显示文字]]` | 同上，链接文字自定义 |
+| `> [!note] 标题` | 信息色提示块 |
+| `> [!warning] 标题` | 警示色提示块（danger / error / caution 等同理） |
+| `![[图片.png]]` | 图片自动复制到 `public/images/` 并插入正文 |
+| `![[图片.png\|图注]]` | 同上，并加上图注；写数字（如 `\|400`）当宽度，忽略 |
+| `%%注释%%` | 直接删掉，不会出现在文章里 |
+| Dataview / Excalidraw / Canvas | **不支持**，别在要发布的文章里用 |
+
+双链指向的文章不存在时会退化成纯文字，同步结束后会打印提示，不会留下断裂的链接。
+
+### 同步的行为边界
+
+- 只写 `content/posts/` 与 `public/images/`，**绝不修改 vault 里的任何文件**
+- 用 `content/.vault-manifest.json` 记录哪些文章来自 vault：
+  vault 里删掉的文章会一起删掉，不再引用的配图会顺手清理
+- **手写的文章不受影响**——脚本只动清单里记录过的文件
+- 同名配图内容不同时会另起名字，不会覆盖你原有的图
+
+---
+
+## 四、部署
 
 ### 第 0 步（必做）：把站内信息改成你自己的
 
@@ -211,7 +288,7 @@ git pull && npm ci && npm run build && pm2 restart margin
 
 ---
 
-## 四、项目结构
+## 五、项目结构
 
 ```
 app/
@@ -222,18 +299,23 @@ app/
   rss.xml/route.ts          RSS 2.0
   sitemap.ts                站点地图
   search-index.json/route.ts 搜索索引（构建期生成）
-content/posts/              文章都放这里 ← 你以后最常来的地方
+content/posts/              文章（Obsidian 同步产物 + 手写的都放这里）
+content/.vault-manifest.json  同步清单：记录哪些文章来自 vault
+blog.config.json            笔记源目录：vault 名 + 文件夹名
 components/                 界面组件（搜索面板、代码块、目录、复制按钮…）
 lib/
-  site.ts                   站点配置 ← 换成你自己的信息
+  site.ts                   站点配置
   posts.ts                  内容层：解析 frontmatter、抽目录、算阅读时长
   search.ts                 搜索与高亮算法
   code-theme.ts             代码高亮主题
-public/images/              文章配图
-scripts/new-post.mjs        新建文章脚本
+public/images/              文章配图（同步时自动搬运）
+scripts/
+  sync-from-vault.mjs       把 Obsidian 笔记转成博客文章
+  publish.mjs               一键发布：同步 → 构建校验 → 提交 → 推送
+  new-post.mjs              不用 Obsidian 时，直接新建一篇文章
 ```
 
-## 五、验证
+## 六、验证
 
 改完东西想确认没写坏：
 

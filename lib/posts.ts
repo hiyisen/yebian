@@ -145,8 +145,12 @@ function parsePost(slug: string, source: string): Post {
   const date = normalizeDate(data.date);
   const [year, month, day] = date.split("-");
 
+  // frontmatter 里的 slug 优先级高于文件名 —— 从 Obsidian 同步过来的文章
+  // 常常会改文件名（加日期前缀、调整措辞），不该因此换掉已发布的网址
+  const frontSlug = String(data.slug ?? "").trim();
+
   return {
-    slug,
+    slug: frontSlug || slug,
     title: String(data.title ?? slug),
     date,
     summary: String(data.summary ?? ""),

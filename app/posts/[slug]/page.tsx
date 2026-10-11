@@ -11,6 +11,19 @@ import { site } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
+/**
+ * 路由参数是百分号编码的字符串。
+ * 英文 slug 看不出来，但 Obsidian 同步过来的中文标题会生成中文 slug，
+ * 不解码就永远匹配不到文章（表现为 404）—— 标签页一直是这么处理的。
+ */
+function decodeSlug(slug: string): string {
+  try {
+    return decodeURIComponent(slug);
+  } catch {
+    return slug;
+  }
+}
+
 /** 构建期把所有文章预渲染成静态页 */
 export function generateStaticParams() {
   return getAllPosts().map((post) => ({ slug: post.slug }));
@@ -18,7 +31,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = getPostBySlug(slug);
+  const post = getPostBySlug(decodeSlug(slug));
   if (!post) return { title: "文章不存在" };
 
   return {
@@ -36,7 +49,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function PostPage({ params }: PageProps) {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  const slug = decodeSlug(rawSlug);
   const post = getPostBySlug(slug);
   if (!post) notFound();
 

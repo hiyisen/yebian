@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "new": "node scripts/new-post.mjs"
+    "new": "node scripts/new-post.mjs",
+    "sync": "node scripts/sync-from-vault.mjs",
+    "publish": "node scripts/publish.mjs"
   },
   "dependencies": {
     "@shikijs/rehype": "^4.5.0",
