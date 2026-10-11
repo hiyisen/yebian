@@ -287,25 +287,36 @@ function stripObsidianComments(body) {
 /**
  * 附件嵌入 → 图片。
  * `![[图.png]]` 插图片；`![[图.png|图注]]` 顺带当图注；`![[图.png|300]]` 里的数字是宽度，忽略。
+ *
+ * 带图注时是否用 <Figure> 包一层，取决于它是不是独占一行：
+ * 嵌在句子中间的 `<Figure>` 会落进段落内部，MDX 会直接报解析错误（实测踩过），
+ * 这种情况退化成标准图片语法就没事了。
  */
 function convertEmbeds(body, ctx) {
-  return body.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (whole, rawName, alias) => {
-    const name = rawName.trim();
-    const src = findAttachment(name, ctx.noteDir, ctx.vaultRoot);
-    if (!src) {
-      warn(`${ctx.rel}：找不到附件「${name}」，已替换为文字提示`);
-      return `【缺少附件：${name}】`;
-    }
-    const url = copyAttachment(src);
-    if (!url) return `【附件重名过多：${name}】`;
+  return body.replace(
+    /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (whole, rawName, alias, offset, full) => {
+      const name = rawName.trim();
+      const src = findAttachment(name, ctx.noteDir, ctx.vaultRoot);
+      if (!src) {
+        warn(`${ctx.rel}：找不到附件「${name}」，已替换为文字提示`);
+        return `【缺少附件：${name}】`;
+      }
+      const url = copyAttachment(src);
+      if (!url) return `【附件重名过多：${name}】`;
 
-    const caption = alias && !/^\d+(x\d+)?$/.test(alias.trim()) ? alias.trim() : "";
-    if (caption) {
+      const caption = alias && !/^\d+(x\d+)?$/.test(alias.trim()) ? alias.trim() : "";
+      const standalone =
+        /(^|\n)[ \t]*$/.test(full.slice(0, offset)) &&
+        /^[ \t]*(\n|$)/.test(full.slice(offset + whole.length));
+
+      if (!caption) return `![](${url})`;
+      if (!standalone) return `![${caption}](${url})`;
+
       const safe = caption.replace(/"/g, "&quot;");
-      return `<Figure caption="${safe}">\n  <img src="${url}" alt="${safe}" />\n</Figure>`;
-    }
-    return `![](${url})`;
-  });
+      return `\n\n<Figure caption="${safe}">\n  <img src="${url}" alt="${safe}" />\n</Figure>\n\n`;
+    },
+  );
 }
 
 /**
