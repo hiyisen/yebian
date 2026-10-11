@@ -1,0 +1,9 @@
+{
+	"id": "blog-publisher",
+	"name": "博客发布",
+	"version": "1.0.0",
+	"minAppVersion": "1.4.0",
+	"description": "点一下就把 Obsidian 里的文章发布到博客：同步 → 构建校验 → 提交 → 推送。",
+	"author": "WorkBuddy",
+	"isDesktopOnly": true
+}

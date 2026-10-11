@@ -152,6 +152,29 @@ function fallbackSummary(body) {
   return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }
 
+/**
+ * 输出一个 YAML 标量：安全就裸写，否则加双引号。
+ *
+ * 不这么做的话，标题写成「Rust: 内存模型」会让整个 frontmatter 解析失败，
+ * 摘要里带 `#​ ` 或者日期长相的文字也会被 YAML 悄悄改写（`2026-10-11` 会变成 Date 对象）。
+ * 裸写与加引号对博客渲染没有区别，所以宁可多引几个。
+ */
+function yamlScalar(value) {
+  const s = String(value ?? "");
+  const unsafe =
+    s === "" ||
+    /^\s|\s$/.test(s) ||
+    /:\s|:$|\s#/.test(s) ||
+    // 流式数组（tags: [a, b]）里这些字符会截断标量
+    /[,{}[\]]/.test(s) ||
+    /^[-?*&!|>%@`"'#]/.test(s) ||
+    /^(true|false|yes|no|on|off|null|~)$/i.test(s) ||
+    /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s) ||
+    /^\d{4}-\d{2}-\d{2}([T ]|$)/.test(s);
+  if (!unsafe) return s;
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 /* ------------------------------------------------------------------ *
  * 附件
  * ------------------------------------------------------------------ */
@@ -442,7 +465,19 @@ function convertWikilinks(body, ctx) {
 /** 先只读元信息 —— 双链要等所有笔记的 slug/标题都拿到手才能解析 */
 function readNote(note) {
   const raw = fs.readFileSync(note.file, "utf8").replace(/\r\n/g, "\n");
-  const { data, content } = matter(raw);
+
+  let parsed;
+  try {
+    parsed = matter(raw);
+  } catch (err) {
+    // YAML 报错信息对写作者没有意义，这里直接翻译成「怎么改」
+    console.error(`\n${note.rel} 的 frontmatter 不是合法的 YAML：`);
+    console.error(`  ${String(err.message ?? err).split("\n")[0]}`);
+    console.error("最常见的原因是标题/摘要里带了冒号（如「Rust: 内存模型」）。用双引号包起来即可：");
+    console.error('  title: "Rust: 内存模型"\n');
+    process.exit(1);
+  }
+  const { data, content } = parsed;
 
   const baseName = path.basename(note.file).replace(/\.md$/i, "");
   const dateMatch = DATE_PREFIX.exec(baseName);
@@ -495,13 +530,13 @@ function transformNote(note, ctx) {
         .split("\n")
         .map((line) => `  ${line.trim()}`)
         .join("\n")}`
-    : note.title;
+    : yamlScalar(note.title);
 
   const front = [
     `title: ${yamlTitle}`,
     `date: ${note.date}`,
-    `summary: ${summary.replace(/\n/g, " ")}`,
-    `tags: [${tags.join(", ")}]`,
+    `summary: ${yamlScalar(summary.replace(/\n/g, " "))}`,
+    `tags: [${tags.map(yamlScalar).join(", ")}]`,
   ];
   if (data.featured === true) front.push("featured: true");
   if (data.draft === true) front.push("draft: true");
@@ -526,6 +561,27 @@ function main() {
   fs.mkdirSync(POSTS_DIR, { recursive: true });
 
   const notes = files.map(readNote);
+
+  // 网址是从文件名/title 生成的，两篇同名笔记会写到同一个 .mdx —— 后写的把先写的覆盖掉，
+  // 而且清单里只会剩一条，属于「悄悄丢一篇文章」，必须拦下来。
+  const bySlug = new Map();
+  for (const note of notes) {
+    const list = bySlug.get(note.slug) ?? [];
+    list.push(note);
+    bySlug.set(note.slug, list);
+  }
+  const clashes = [...bySlug.entries()].filter(([, list]) => list.length > 1);
+  if (clashes.length) {
+    console.error("\n有笔记会生成同一个网址，同步会互相覆盖（这是会丢文章的错误，已中止）：");
+    for (const [slug, list] of clashes) {
+      console.error(`\n  /posts/${slug}`);
+      for (const n of list) console.error(`    ← ${n.rel}`);
+    }
+    console.error("\n改掉其中一个的文件名；或者保留文件名，在它的 frontmatter 里写一行 `slug: 另一个网址`。");
+    console.error("（如果两篇是同名的草稿，把暂时不发的那篇挪进下划线开头的目录，如 博客/_草稿/ —— 那个目录整个不会被同步。）\n");
+    process.exit(1);
+  }
+
   const lookup = new Map();
   for (const note of notes) {
     lookup.set(note.slug.toLowerCase(), note.slug);

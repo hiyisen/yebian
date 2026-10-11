@@ -8,7 +8,9 @@
     "start": "next start",
     "new": "node scripts/new-post.mjs",
     "sync": "node scripts/sync-from-vault.mjs",
-    "publish": "node scripts/publish.mjs"
+    "publish": "node scripts/publish.mjs",
+    "plugin": "node scripts/install-plugin.mjs",
+    "test:plugin": "node tools/obsidian-plugin/test.cjs"
   },
   "dependencies": {
     "@shikijs/rehype": "^4.5.0",

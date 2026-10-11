@@ -1,0 +1,23 @@
+/* 博客发布插件：日志窗口的样式 */
+
+.blog-publisher-log pre {
+  max-height: 55vh;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-normal);
+}
+
+.blog-publisher-log-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}

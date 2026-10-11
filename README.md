@@ -113,7 +113,31 @@ title: 我为什么删掉了 *60%* 的代码
 
 ## 三、在 Obsidian 里写（推荐）
 
-日常写作走这条路：**在 Obsidian 里写笔记，一条命令发布**，不用碰这个仓库。
+日常写作走这条路：**在 Obsidian 里写笔记，点一下按钮发布**，不用碰这个仓库。
+
+### 一键发布：Obsidian 左侧栏的火箭图标
+
+`tools/obsidian-plugin/` 里是一个自写的 Obsidian 插件「博客发布」，只干一件事：
+把 `npm run publish` 变成一个可点的按钮。装一次之后——
+
+| 入口 | 做什么 |
+| --- | --- |
+| 左侧栏火箭图标，或 ⌘⇧P | 发布 ＝ 同步 → 构建校验 → 提交 → 推送 |
+| ⌘⇧L | 本地预览（起 `npm run dev` 并打开 localhost:3000） |
+| 命令面板「查看上次发布日志」 | 看上次的完整输出 |
+
+底部状态栏显示进度（`同步 1/4…` → `构建校验 2/4…`）。**失败会自动弹出完整日志**，
+提示里只说一句人话（如 `构建失败，已中止。内容还留在本地…`），不甩堆栈。
+
+装 / 更新：
+
+```bash
+npm run plugin     # 复制到 <vault>/.obsidian/plugins/blog-publisher/
+```
+
+装完**重启 Obsidian**（插件是启动时加载的）。图标没出现就去 设置 → 第三方插件
+打开「博客发布」。仓库里的那份是唯一需要维护的副本，改完跑一次 `npm run plugin` 即可；
+`npm run test:plugin` 可以离线验证插件（不用开 Obsidian）。
 
 ### 写作位置
 
@@ -313,6 +337,8 @@ scripts/
   sync-from-vault.mjs       把 Obsidian 笔记转成博客文章
   publish.mjs               一键发布：同步 → 构建校验 → 提交 → 推送
   new-post.mjs              不用 Obsidian 时，直接新建一篇文章
+  install-plugin.mjs        把 tools/obsidian-plugin/ 装进 vault
+tools/obsidian-plugin/      Obsidian 插件「博客发布」的源码（唯一需要维护的副本）
 ```
 
 ## 六、验证
@@ -320,8 +346,9 @@ scripts/
 改完东西想确认没写坏：
 
 ```bash
-npm run build      # 类型检查 + 构建，同时会暴露 frontmatter 写错的问题
-npm start          # 然后打开 http://localhost:3000 看实际效果
+npm run build        # 类型检查 + 构建，同时会暴露 frontmatter 写错的问题
+npm run test:plugin  # 离线验证 Obsidian 插件（不需要开 Obsidian）
+npm start            # 然后打开 http://localhost:3000 看实际效果
 ```
 
 文章的解析与高亮有一条独立的冒烟测试：`scripts/smoke.mts`。
