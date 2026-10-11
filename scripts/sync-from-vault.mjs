@@ -103,11 +103,12 @@ const DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})[-_ ]/;
 function slugify(name) {
   return name
     .trim()
-    .replace(/\s+/g, "-")
+    .toLowerCase()
+    // 中文标点与空白当成分词边界，保留断句（直接删掉会让「理直气壮，还能」连成一片）
+    .replace(/[\s，、。；：？！…—·「」『』“”‘’（）《》〈〉【】〔〕]+/g, "-")
     .replace(/[^\w\u4e00-\u9fff-]/g, "")
     .replace(/-{2,}/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase();
+    .replace(/^-|-$/g, "");
 }
 
 function stripMarkdown(s) {
@@ -135,18 +136,18 @@ function normalizeDate(value) {
 
 /** 正文里第一段有意义的文字，用作缺省摘要 */
 function fallbackSummary(body) {
-  const para = body
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .find(
-      (p) =>
-        p.length > 12 &&
-        !p.startsWith("#") &&
-        !p.startsWith(">") &&
-        !p.startsWith("|") &&
-        !p.startsWith("```"),
-    );
-  const text = stripMarkdown(para ?? "");
+  const paras = body.split(/\n{2,}/).map((p) => p.trim());
+  const pick = paras.find(
+    (p) =>
+      p.length > 12 &&
+      !p.startsWith("#") &&
+      !p.startsWith("|") &&
+      !p.startsWith("```") &&
+      // 组件（<Callout>、<Figure> 等）不适合当摘要
+      !p.startsWith("<"),
+  );
+  // 开头的引用块常被作者当导语，剥掉 > 后拿来当摘要是合适的
+  const text = stripMarkdown((pick ?? "").replace(/^\s*>\s?/gm, ""));
   return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }
 
@@ -285,6 +286,67 @@ function stripObsidianComments(body) {
 }
 
 /**
+ * 压掉列表项之间的空行。
+ *
+ * 在 Obsidian 里写列表，换行后会自动补一个缩进空行，看起来清爽；
+ * 但标准 Markdown 把「列表中间有空行」视为松散列表，每个 <li> 都会被 <p> 包住，
+ * 渲染出来项目之间是一整段的行距，整块列表散得没法看。这里把这类空行去掉，
+ * 只处理「前后都是列表项」的情况 —— 列表与段落之间的空行必须保留。
+ */
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
+
+function compactLists(body) {
+  const lines = body.split("\n");
+  const out = [];
+  let inFence = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s{0,3}(```|~~~)/.test(line)) inFence = !inFence;
+
+    if (inFence || line.trim() !== "") {
+      out.push(line);
+      continue;
+    }
+
+    let prev = null;
+    for (let k = out.length - 1; k >= 0; k -= 1) {
+      if (out[k].trim() !== "") {
+        prev = out[k];
+        break;
+      }
+    }
+    let next = null;
+    for (let k = i + 1; k < lines.length; k += 1) {
+      if (lines[k].trim() !== "") {
+        next = lines[k];
+        break;
+      }
+    }
+
+    if (prev && next && LIST_ITEM.test(prev) && LIST_ITEM.test(next)) continue;
+    out.push("");
+  }
+
+  return out.join("\n");
+}
+
+/**
+ * 剥掉正文开头与标题重复的一级标题。
+ *
+ * 在 Obsidian 里写笔记习惯先来一行 `# 标题`，但文章页已经用 frontmatter 的 title
+ * 渲染了页面大标题，不处理就会上下顶着两个一模一样的标题。只在两者确实相同时才动手，
+ * 作者自己写的小标题不受影响。
+ */
+function stripDuplicateHeading(body, title) {
+  const m = /^\s*#\s+(.+?)\s*\n/.exec(body);
+  if (!m) return body;
+  const norm = (s) => s.replace(/[*_`]/g, "").replace(/\s+/g, "").trim();
+  if (norm(m[1]) !== norm(title)) return body;
+  return body.slice(m[0].length).replace(/^\s*\n/, "").trimStart();
+}
+
+/**
  * 附件嵌入 → 图片。
  * `![[图.png]]` 插图片；`![[图.png|图注]]` 顺带当图注；`![[图.png|300]]` 里的数字是宽度，忽略。
  *
@@ -363,6 +425,8 @@ function readNote(note) {
   const date =
     normalizeDate(data.date) ||
     (dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : "") ||
+    // Obsidian 笔记常带 created 字段，比文件修改时间更贴近写作时间
+    normalizeDate(data.created) ||
     fileDate;
 
   return { ...note, data, content, title, slug, date, hasSlug: Boolean(data.slug) };
@@ -376,7 +440,9 @@ function transformNote(note, ctx) {
   body = convertEmbeds(body, forNote);
   body = convertCallouts(body, note.rel);
   body = convertWikilinks(body, forNote);
+  body = compactLists(body);
   body = body.replace(/\n{3,}/g, "\n\n").trim();
+  body = stripDuplicateHeading(body, note.title);
 
   const { data } = note;
   const tags = Array.isArray(data.tags)
@@ -389,8 +455,16 @@ function transformNote(note, ctx) {
 
   const summary = String(data.summary ?? "").trim() || fallbackSummary(body);
 
+  /** 含换行的值用 YAML 块标量输出，否则 frontmatter 结构会被换行截断 */
+  const yamlTitle = /[\n]/.test(note.title)
+    ? `|-\n${note.title
+        .split("\n")
+        .map((line) => `  ${line.trim()}`)
+        .join("\n")}`
+    : note.title;
+
   const front = [
-    `title: ${note.title}`,
+    `title: ${yamlTitle}`,
     `date: ${note.date}`,
     `summary: ${summary.replace(/\n/g, " ")}`,
     `tags: [${tags.join(", ")}]`,
