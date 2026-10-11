@@ -8,8 +8,8 @@ export const site = {
   title: "页边 MARGIN",
   description:
     "这里存放我在工程与设计上的笔记——踩过的坑、想通的原理、以及那些值得反复回看的片段。",
-  /** 部署后改成真实域名，RSS 与 sitemap 会用到 */
-  url: "https://margin.example.com",
+  /** 正式域名，RSS、sitemap 与分享卡片都会用它拼绝对地址 */
+  url: "https://yebian.vercel.app",
   since: "2024",
   author: {
     name: "页边",
@@ -21,8 +21,8 @@ export const site = {
     { href: "/about", label: "关于" },
   ],
   social: [
-    { href: "https://github.com/", label: "GitHub" },
-    { href: "mailto:hi@example.com", label: "邮件" },
+    { href: "https://github.com/hiyisen", label: "GitHub" },
+    { href: "mailto:1363022366@qq.com", label: "邮件" },
   ],
 } as const;
 
