@@ -19,6 +19,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { execFileSync } from "node:child_process";
 import matter from "gray-matter";
 
 const ROOT = process.cwd();
@@ -178,28 +179,61 @@ function findAttachment(name, noteDir, vaultRoot) {
   return attachmentIndex.get(name) ?? null;
 }
 
+/**
+ * 大图压缩：超过 1.5MB 的图用 macOS 自带的 sips 转 JPEG 并缩到 1920 宽。
+ *
+ * Obsidian 里随手贴的壁纸/照片动辄 4K 原图好几 MB，直接进仓库会拖垮页面加载。
+ * 压缩收益不明显（已小于原体积六成）或环境没有 sips（非 macOS）时保持原样。
+ */
+function compressIfLarge(src) {
+  try {
+    if (fs.statSync(src).size <= 1.5 * 1024 * 1024) return null;
+    if (!/\.(png|jpe?g|heic|heif|tiff?)$/i.test(src)) return null;
+
+    const probe = execFileSync("/usr/bin/sips", ["-g", "pixelWidth", src], {
+      encoding: "utf8",
+    });
+    const width = Number(/pixelWidth:\s*(\d+)/.exec(probe)?.[1] ?? 0);
+
+    const args = ["-s", "format", "jpeg", "-s", "formatOptions", "78"];
+    if (width > 1920) args.push("--resampleWidth", "1920");
+    const tmp = path.join(os.tmpdir(), `blog-compress-${process.pid}-${Date.now()}.jpg`);
+    execFileSync("/usr/bin/sips", [...args, src, "--out", tmp], { stdio: "ignore" });
+
+    if (fs.existsSync(tmp) && fs.statSync(tmp).size < fs.statSync(src).size * 0.6) return tmp;
+    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function copyAttachment(src) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  const ext = path.extname(src);
+  const compressed = compressIfLarge(src);
+  const actual = compressed ?? src;
+  const ext = (compressed ? ".jpg" : path.extname(src)).toLowerCase();
   // Obsidian 的粘贴图常带空格（Pasted image 2026...png），带空格进 URL 会出问题
   const base =
     path
-      .basename(src, ext)
+      .basename(src, path.extname(src))
       .replace(/\s+/g, "-")
       .replace(/[^\w\u4e00-\u9fff.-]/g, "")
       .replace(/-{2,}/g, "-") || "image";
   let target = path.join(IMAGES_DIR, `${base}${ext}`);
   let n = 2;
   // 同名但内容不同时另起名字，避免覆盖别人的图
-  while (fs.existsSync(target) && !fs.readFileSync(target).equals(fs.readFileSync(src))) {
+  while (fs.existsSync(target) && !fs.readFileSync(target).equals(fs.readFileSync(actual))) {
     target = path.join(IMAGES_DIR, `${base}-${n}${ext}`);
     n += 1;
     if (n > 20) {
       warn(`附件重名过多，跳过：${base}${ext}`);
+      if (compressed) fs.unlinkSync(compressed);
       return null;
     }
   }
-  if (!fs.existsSync(target)) fs.copyFileSync(src, target);
+  if (!fs.existsSync(target)) fs.copyFileSync(actual, target);
+  if (compressed) fs.unlinkSync(compressed);
   return `/images/${encodeURIComponent(path.basename(target))}`;
 }
 
